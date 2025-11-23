@@ -1,0 +1,16 @@
+body { font-family: sans-serif; background: #121212; color: white; margin: 0; padding: 20px; }
+.container { max-width: 600px; margin: 0 auto; }
+h1 { text-align: center; color: #1db954; } /* Spotify Green */
+input { display: block; width: 100%; padding: 10px; margin-bottom: 10px; background: #333; border: none; color: white; border-radius: 4px; box-sizing: border-box;}
+button { width: 100%; padding: 10px; background: #1db954; border: none; color: white; font-weight: bold; cursor: pointer; border-radius: 20px; }
+button:hover { background: #1ed760; }
+button:disabled { background: #555; }
+
+.player-box { background: #282828; padding: 20px; border-radius: 8px; text-align: center; position: sticky; top: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+.audio-player { width: 100%; margin-top: 10px; }
+
+.song-item { list-style: none; background: #181818; margin: 5px 0; padding: 10px; display: flex; align-items: center; cursor: pointer; border-radius: 4px; transition: 0.2s; }
+.song-item:hover { background: #333; }
+.play-icon { margin-right: 15px; font-size: 1.2em; }
+ul { padding: 0; }
+hr { border-color: #333; margin: 30px 0; }
