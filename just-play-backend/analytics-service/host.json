@@ -16,7 +16,9 @@
   "customHandler": {
     "description": {
       "defaultExecutablePath": "node",
-      "workingDirectory": "src"
-    }
+      "workingDirectory": "src",
+      "arguments": ["index.js"]
+    },
+    "enableForwardingHttpRequest": true
   }
 }

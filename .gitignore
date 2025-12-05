@@ -4,3 +4,5 @@
 .env
 dist/
 build/
+
+just-play-backend/analytics-service/local.settings.json

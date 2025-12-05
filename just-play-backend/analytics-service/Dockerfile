@@ -14,3 +14,7 @@ COPY . .
 # 5. [KRITIS] Set environment variable untuk Custom Handler
 # Ini memastikan host Functions tahu cara menjalankan worker Anda
 ENV AzureWebJobsScriptRoot=/home/site/wwwroot
+
+# 6. Jalankan server Node.js secara langsung
+# Ini memastikan container tetap hidup dan listen pada port yang benar
+CMD ["node", "src/index.js"]
