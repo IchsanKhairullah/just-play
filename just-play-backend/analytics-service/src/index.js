@@ -27,7 +27,7 @@ const PORT = process.env.FUNCTIONS_CUSTOMHANDLER_PORT || 3000;
 
 // Mongoose Schema
 const eventSchema = new mongoose.Schema({
-    userId: String,
+    songId: String,
     event: String,
     timestamp: { type: Date, default: Date.now },
     metadata: mongoose.Schema.Types.Mixed
@@ -61,6 +61,26 @@ const connectDB = async () => {
 // Health check endpoint
 app.get('/', (req, res) => {
     res.send('Analytics Service Worker is running');
+});
+
+// GET endpoint to retrieve events
+app.get('/api/events', async (req, res) => {
+    console.log("Worker received request at /api/events");
+
+    // Ensure DB is connected
+    await connectDB();
+
+    try {
+        // Retrieve latest 100 events, sorted by timestamp descending
+        const events = await AnalyticsEvent.find()
+            .sort({ timestamp: -1 })
+            .limit(100);
+
+        res.status(200).json(events);
+    } catch (error) {
+        console.error("Error retrieving events:", error);
+        res.status(500).send("Internal Server Error");
+    }
 });
 
 // Main event tracking endpoint
