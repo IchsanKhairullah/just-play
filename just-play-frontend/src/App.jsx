@@ -71,8 +71,15 @@ function App() {
       }
     };
 
-    const handlePlay = () => setIsPlaying(true);
-    const handlePause = () => setIsPlaying(false);
+    const handlePlay = () => {
+      setIsPlaying(true);
+      if (currentSong) trackEvent("play", currentSong._id);
+    };
+
+    const handlePause = () => {
+      setIsPlaying(false);
+      if (currentSong) trackEvent("pause", currentSong._id);
+    };
 
     audio.addEventListener('timeupdate', updateProgress);
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
@@ -160,7 +167,6 @@ function App() {
         body: JSON.stringify(payload)
       });
 
-      // Refresh analytics data after tracking
       setTimeout(fetchAnalytics, 500);
     } catch (error) {
       console.error("Analytics tracking failed:", error);
@@ -171,8 +177,6 @@ function App() {
   const playSong = async (song, index) => {
     setCurrentSong(song);
     setCurrentIndex(index);
-    
-    // Track play event
     await trackEvent('play', song._id);
   };
 
@@ -181,8 +185,10 @@ function App() {
     if (!audio || !currentSong) return;
 
     if (isPlaying) {
+      trackEvent("pause", currentSong._id);
       audio.pause();
     } else {
+      trackEvent("play", currentSong._id);
       audio.play();
     }
   };
@@ -195,8 +201,9 @@ function App() {
     
     setCurrentSong(prevSong);
     setCurrentIndex(newIndex);
-    
-    await trackEvent('skip', prevSong._id);
+      
+    await trackEvent("skip", currentSong?._id);  // skip lagu sekarang
+    await trackEvent("play", prevSong._id);      // play lagu baru
   };
 
   const handleNext = async () => {
@@ -208,7 +215,8 @@ function App() {
     setCurrentSong(nextSong);
     setCurrentIndex(newIndex);
     
-    await trackEvent('skip', nextSong._id);
+    await trackEvent("skip", currentSong?._id);
+    await trackEvent("play", nextSong._id);
   };
 
   const toggleLoop = () => {
@@ -241,7 +249,6 @@ function App() {
 
     setUploading(true);
     try {
-      // Upload file to Stream Service
       const formData = new FormData();
       formData.append('file', file);
 
@@ -254,7 +261,6 @@ function App() {
       const streamData = await streamRes.json();
       const songUrl = streamData.url;
 
-      // Save metadata to Catalog Service
       const metadataRes = await fetch(`${CATALOG_API_BASE}/addSong`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -334,12 +340,11 @@ function App() {
 
   return (
     <div className="app">
-      {/* Navigation Header */}
+      {/* Header */}
       <header className="header">
         <div className="header-content">
           <div className="logo">
             <h1>🎵 Just Play</h1>
-            <span className="tagline">Premium Streaming</span>
           </div>
           <nav className="nav-tabs">
             <button 
@@ -368,178 +373,178 @@ function App() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="main-content">
-        {/* Music Library Tab */}
-        {activeTab === 'music' && (
-          <div className="music-library">
-            <div className="section-header">
-              <h2>Your Music Collection</h2>
-              <span className="song-count">{songs.length} tracks</span>
-            </div>
-            
-            {songs.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon">🎵</div>
-                <h3>No music yet</h3>
-                <p>Upload your first track to get started</p>
-              </div>
-            ) : (
-              <div className="songs-grid">
-                {songs.map((song, index) => (
-                  <div 
-                    key={song._id} 
-                    className={`song-card ${currentSong?._id === song._id ? 'playing' : ''}`}
-                    onClick={() => playSong(song, index)}
-                  >
-                    <div className="song-artwork">
-                      <div className="play-overlay">
-                        <div className="play-button">
-                          {currentSong?._id === song._id && isPlaying ? '⏸️' : '▶️'}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="song-info">
-                      <h3 className="song-title">{song.title}</h3>
-                      <p className="song-artist">{song.artist}</p>
-                    </div>
-                    {currentSong?._id === song._id && (
-                      <div className="now-playing-indicator">
-                        <div className="sound-wave">
-                          <span></span>
-                          <span></span>
-                          <span></span>
-                        </div>
-                      </div>
-                    )}
+      {/* Main Content - Scrollable */}
+      <main>
+        <div className="main-wrapper">
+          <div className="main-content">
+
+            {/* Music Library Tab */}
+            {activeTab === 'music' && (
+              <div className="music-library">
+                <div className="section-header">
+                  <h2>Your Music Collection</h2>
+                  <span className="song-count">{songs.length} tracks</span>
+                </div>
+                
+                {songs.length === 0 ? (
+                  <div className="empty-state">
+                    <div className="empty-icon">🎵</div>
+                    <h3>No music yet</h3>
+                    <p>Upload your first track to get started</p>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Upload Tab */}
-        {activeTab === 'upload' && (
-          <div className="upload-section">
-            <div className="section-header">
-              <h2>Upload New Track</h2>
-              <p>Share your music with the world</p>
-            </div>
-            
-            <form onSubmit={handleUpload} className="upload-form">
-              <div className="form-grid">
-                <div className="input-group">
-                  <label>Track Title</label>
-                  <input 
-                    type="text" 
-                    placeholder="Enter song title" 
-                    value={title} 
-                    onChange={e => setTitle(e.target.value)} 
-                    required 
-                  />
-                </div>
-                <div className="input-group">
-                  <label>Artist Name</label>
-                  <input 
-                    type="text" 
-                    placeholder="Enter artist name" 
-                    value={artist} 
-                    onChange={e => setArtist(e.target.value)} 
-                  />
-                </div>
-              </div>
-              
-              <div className="file-upload-area">
-                <input 
-                  type="file" 
-                  accept="audio/*" 
-                  onChange={e => setFile(e.target.files,[object, Object],)} 
-                  required 
-                  id="file-input"
-                  className="file-input"
-                />
-                <label htmlFor="file-input" className="file-label">
-                  <div className="upload-icon">📁</div>
-                  <span>{file ? file.name : 'Choose audio file'}</span>
-                  <small>MP3, WAV, FLAC supported</small>
-                </label>
-              </div>
-              
-              <button type="submit" disabled={uploading} className="upload-btn">
-                {uploading ? (
-                  <>
-                    <span className="spinner"></span>
-                    Uploading...
-                  </>
                 ) : (
-                  'Upload Track'
+                  <div className="songs-grid">
+                    {songs.map((song, index) => (
+                      <div 
+                        key={song._id} 
+                        className={`song-card ${currentSong?._id === song._id ? 'playing' : ''}`}
+                        onClick={() => playSong(song, index)}
+                      >
+                        <div className="song-artwork">
+                          <div className="play-overlay">
+                            <div className="play-button">
+                              {currentSong?._id === song._id && isPlaying ? '⏸️' : '▶️'}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="song-info">
+                          <h3 className="song-title">{song.title}</h3>
+                          <p className="song-artist">{song.artist}</p>
+                        </div>
+                        {currentSong?._id === song._id && (
+                          <div className="now-playing-indicator">
+                            <div className="sound-wave">
+                              <span></span>
+                              <span></span>
+                              <span></span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </button>
-            </form>
-          </div>
-        )}
+              </div>
+            )}
 
-        {/* Analytics Tab */}
-        {activeTab === 'analytics' && (
-          <div className="analytics-section">
-            <div className="section-header">
-              <h2>Analytics Dashboard</h2>
-              <button onClick={fetchAnalytics} className="refresh-btn">
-                🔄 Refresh
-              </button>
-            </div>
-            
-            {isLoadingAnalytics ? (
-              <div className="loading-state">
-                <div className="spinner"></div>
-                <p>Loading analytics data...</p>
-              </div>
-            ) : analyticsData.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon">📊</div>
-                <h3>No activity yet</h3>
-                <p>Start playing music to see analytics</p>
-              </div>
-            ) : (
-              <div className="analytics-table">
-                <div className="table-header">
-                  <div>Song</div>
-                  <div>Action</div>
-                  <div>User</div>
-                  <div>Timestamp</div>
+            {/* Upload Tab */}
+            {activeTab === 'upload' && (
+              <div className="upload-section">
+                <div className="section-header">
+                  <h2>Upload New Track</h2>
+                  <p>Share your music with the world</p>
                 </div>
-                <div className="table-body">
-                  {analyticsData.slice(0, 50).map((event) => (
-                    <div key={event._id} className="table-row">
-                      <div className="song-cell">
-                        <strong>{getSongTitle(event.songId)}</strong>
-                      </div>
-                      <div className={`action-cell ${event.event}`}>
-                        <span className="action-badge">
-                          {event.event === 'play' ? '▶️ Play' : '⏭️ Skip'}
-                        </span>
-                      </div>
-                      <div className="user-cell">{event.userId}</div>
-                      <div className="time-cell">{formatDate(event.timestamp)}</div>
+                
+                <form onSubmit={handleUpload} className="upload-form">
+                  <div className="form-grid">
+                    <div className="input-group">
+                      <label>Track Title</label>
+                      <input 
+                        type="text" 
+                        placeholder="Enter song title" 
+                        value={title} 
+                        onChange={e => setTitle(e.target.value)} 
+                        required 
+                      />
                     </div>
-                  ))}
+                    <div className="input-group">
+                      <label>Artist Name</label>
+                      <input 
+                        type="text" 
+                        placeholder="Enter artist name" 
+                        value={artist} 
+                        onChange={e => setArtist(e.target.value)} 
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="file-upload-area">
+                    <input 
+                      type="file" 
+                      accept="audio/*" 
+                      onChange={e => setFile(e.target.files[0])}
+                      required 
+                      id="file-input"
+                      className="file-input"
+                    />
+                    <label htmlFor="file-input" className="file-label">
+                      <div className="upload-icon">📁</div>
+                      <span>{file ? file.name : 'Choose audio file'}</span>
+                      <small>MP3, WAV, FLAC supported</small>
+                    </label>
+                  </div>
+                  
+                  <button type="submit" disabled={uploading} className="upload-btn">
+                    {uploading ? (
+                      <>
+                        <span className="spinner"></span>
+                        Uploading...
+                      </>
+                    ) : (
+                      'Upload Track'
+                    )}
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* Analytics Tab */}
+            {activeTab === 'analytics' && (
+              <div className="analytics-section">
+                <div className="section-header">
+                  <h2>Analytics Dashboard</h2>
+                  <button onClick={fetchAnalytics} className="refresh-btn">
+                    🔄 Refresh
+                  </button>
                 </div>
+
+                {isLoadingAnalytics ? (
+                  <div className="loading-state">
+                    <div className="spinner"></div>
+                    <p>Loading analytics data...</p>
+                  </div>
+                ) : analyticsData.length === 0 ? (
+                  <div className="empty-state">
+                    <div className="empty-icon">📊</div>
+                    <h3>No activity yet</h3>
+                    <p>Start playing music to see analytics</p>
+                  </div>
+                ) : (
+                  <div className="analytics-table">
+                    <div className="table-header">
+                      <div>Song</div>
+                      <div>Action</div>
+                      <div>User</div>
+                      <div>Timestamp</div>
+                    </div>
+                    <div className="table-body">
+                      {analyticsData.slice(0, 50).map((event) => (
+                        <div key={event._id} className="table-row">
+                          <div className="song-cell">
+                            <strong>{getSongTitle(event.songId)}</strong>
+                          </div>
+                          <div className={`action-cell ${event.event}`}>
+                            <span className="action-badge">
+                              {event.event === 'play' ? '▶️ Play' : '⏭️ Skip'}
+                            </span>
+                          </div>
+                          <div className="user-cell">{event.userId}</div>
+                          <div className="time-cell">{formatDate(event.timestamp)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
-        )}
+        </div>
       </main>
 
-      {/* Music Player Footer */}
+      {/* Music Player Footer - Always Sticky at Bottom */}
       {currentSong && (
         <footer className="player-footer">
-          <audio 
-            ref={audioRef} 
-            src={currentSong.url} 
-            autoPlay
-          />
-          
+          <audio ref={audioRef} src={currentSong.url} autoPlay />
           <div className="player-container">
             {/* Now Playing Info */}
             <div className="now-playing-info">
@@ -551,35 +556,36 @@ function App() {
                 <p>{currentSong.artist}</p>
               </div>
             </div>
-            
+
             {/* Player Controls */}
             <div className="player-controls">
               <div className="control-buttons">
-                <button onClick={handlePrevious} className="control-btn">⏮️</button>
-                <button onClick={togglePlayPause} className="play-pause-btn">
+                <button className="control-btn" onClick={handlePrevious}>
+                  ⏮️
+                </button>
+                <button className="play-pause-btn" onClick={togglePlayPause}>
                   {isPlaying ? '⏸️' : '▶️'}
                 </button>
-                <button onClick={handleNext} className="control-btn">⏭️</button>
+                <button className="control-btn" onClick={handleNext}>
+                  ⏭️
+                </button>
                 <button 
-                  onClick={toggleLoop} 
-                  className={`control-btn ${isLooping ? 'active' : ''}`}
+                  className={`control-btn ${isLooping ? 'active' : ''}`} 
+                  onClick={toggleLoop}
                 >
                   🔁
                 </button>
               </div>
               
               <div className="progress-container">
-                <span className="time-display">{formatTime(audioRef.current?.currentTime)}</span>
+                <span className="time-display">{formatTime(duration * (progress / 100))}</span>
                 <div className="progress-bar" onClick={handleProgressClick}>
-                  <div 
-                    className="progress-fill" 
-                    style={{width: `${progress}%`}}
-                  ></div>
+                  <div className="progress-fill" style={{ width: `${progress}%` }}></div>
                 </div>
                 <span className="time-display">{formatTime(duration)}</span>
               </div>
             </div>
-            
+
             {/* Volume Control */}
             <div className="volume-control">
               <span className="volume-icon">🔊</span>
