@@ -1,43 +1,247 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
 
-// --- GANTI URL INI DENGAN URL FUNCTION APP ANDA ---
+// API Configuration
 const CATALOG_API_BASE = "https://func-catalog-just-play.azurewebsites.net/api"; 
 const STREAM_API_BASE = "https://func-stream-just-play.azurewebsites.net/api";
+const ANALYTICS_API_BASE = "http://localhost:7073/api";
 
 function App() {
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [showLoginModal, setShowLoginModal] = useState(true);
+  
+  // Music State
   const [songs, setSongs] = useState([]);
   const [currentSong, setCurrentSong] = useState(null);
-  const [uploading, setUploading] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(-1);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLooping, setIsLooping] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(0.7);
   
-  // Form State
+  // Upload State
+  const [uploading, setUploading] = useState(false);
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
   const [file, setFile] = useState(null);
+  
+  // Analytics State
+  const [analyticsData, setAnalyticsData] = useState([]);
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
+  
+  // UI State
+  const [activeTab, setActiveTab] = useState('music');
+  
+  // Refs
+  const audioRef = useRef(null);
 
-  // 1. Load Lagu saat aplikasi dibuka
+  // Load initial data when authenticated
   useEffect(() => {
-    fetchSongs();
-  }, []);
+    if (isAuthenticated) {
+      fetchSongs();
+      fetchAnalytics();
+    }
+  }, [isAuthenticated]);
 
-  const fetchSongs = async () => {
-    try {
-      const res = await fetch(`${CATALOG_API_BASE}/getSongs`);
-      const data = await res.json();
-      setSongs(data);
-    } catch (err) {
-      console.error("Gagal ambil lagu:", err);
+  // Audio event listeners
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const updateProgress = () => {
+      if (audio.duration) {
+        setProgress((audio.currentTime / audio.duration) * 100);
+      }
+    };
+
+    const handleLoadedMetadata = () => {
+      setDuration(audio.duration);
+      audio.volume = volume;
+    };
+
+    const handleEnded = () => {
+      if (isLooping) {
+        audio.currentTime = 0;
+        audio.play();
+      } else {
+        handleNext();
+      }
+    };
+
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
+
+    audio.addEventListener('timeupdate', updateProgress);
+    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+    audio.addEventListener('ended', handleEnded);
+    audio.addEventListener('play', handlePlay);
+    audio.addEventListener('pause', handlePause);
+
+    return () => {
+      audio.removeEventListener('timeupdate', updateProgress);
+      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('play', handlePlay);
+      audio.removeEventListener('pause', handlePause);
+    };
+  }, [isLooping, volume]);
+
+  // Authentication Functions
+  const handleLogin = (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const username = formData.get('username');
+    const password = formData.get('password');
+    
+    if (username && password) {
+      const user = {
+        id: `user_${Date.now()}`,
+        username: username
+      };
+      setCurrentUser(user);
+      setIsAuthenticated(true);
+      setShowLoginModal(false);
+    } else {
+      alert('Please enter both username and password');
     }
   };
 
-  // 2. Handle Upload (File ke Blob -> Metadata ke Mongo)
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    setShowLoginModal(true);
+    setCurrentSong(null);
+    setCurrentIndex(-1);
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+  };
+
+  // Data Fetching Functions
+  const fetchSongs = async () => {
+    try {
+      const response = await fetch(`${CATALOG_API_BASE}/getSongs`);
+      const data = await response.json();
+      setSongs(data);
+    } catch (error) {
+      console.error("Failed to fetch songs:", error);
+    }
+  };
+
+  const fetchAnalytics = async () => {
+    setIsLoadingAnalytics(true);
+    try {
+      const response = await fetch(`${ANALYTICS_API_BASE}/events`);
+      const data = await response.json();
+      setAnalyticsData(data);
+    } catch (error) {
+      console.error("Failed to fetch analytics:", error);
+      setAnalyticsData([]);
+    } finally {
+      setIsLoadingAnalytics(false);
+    }
+  };
+
+  // Analytics Functions
+  const trackEvent = async (eventType, songId) => {
+    try {
+      const payload = {
+        songId,
+        event: eventType,
+        userId: currentUser?.id
+      };
+
+      await fetch(`${ANALYTICS_API_BASE}/trackEvent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      // Refresh analytics data after tracking
+      setTimeout(fetchAnalytics, 500);
+    } catch (error) {
+      console.error("Analytics tracking failed:", error);
+    }
+  };
+
+  // Music Player Functions
+  const playSong = async (song, index) => {
+    setCurrentSong(song);
+    setCurrentIndex(index);
+    
+    // Track play event
+    await trackEvent('play', song._id);
+  };
+
+  const togglePlayPause = () => {
+    const audio = audioRef.current;
+    if (!audio || !currentSong) return;
+
+    if (isPlaying) {
+      audio.pause();
+    } else {
+      audio.play();
+    }
+  };
+
+  const handlePrevious = async () => {
+    if (songs.length === 0) return;
+    
+    const newIndex = currentIndex > 0 ? currentIndex - 1 : songs.length - 1;
+    const prevSong = songs[newIndex];
+    
+    setCurrentSong(prevSong);
+    setCurrentIndex(newIndex);
+    
+    await trackEvent('skip', prevSong._id);
+  };
+
+  const handleNext = async () => {
+    if (songs.length === 0) return;
+    
+    const newIndex = currentIndex < songs.length - 1 ? currentIndex + 1 : 0;
+    const nextSong = songs[newIndex];
+    
+    setCurrentSong(nextSong);
+    setCurrentIndex(newIndex);
+    
+    await trackEvent('skip', nextSong._id);
+  };
+
+  const toggleLoop = () => {
+    setIsLooping(!isLooping);
+  };
+
+  const handleProgressClick = (e) => {
+    const audio = audioRef.current;
+    if (!audio || !duration) return;
+    
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const newTime = (clickX / rect.width) * duration;
+    
+    audio.currentTime = newTime;
+  };
+
+  const handleVolumeChange = (e) => {
+    const newVolume = e.target.value / 100;
+    setVolume(newVolume);
+    if (audioRef.current) {
+      audioRef.current.volume = newVolume;
+    }
+  };
+
+  // Upload Functions
   const handleUpload = async (e) => {
     e.preventDefault();
-    if (!file || !title) return alert("Pilih file dan isi judul!");
+    if (!file || !title) return alert("Please select file and enter title!");
 
     setUploading(true);
     try {
-      // A. Upload File ke Stream Service
+      // Upload file to Stream Service
       const formData = new FormData();
       formData.append('file', file);
 
@@ -46,11 +250,11 @@ function App() {
         body: formData
       });
 
-      if (!streamRes.ok) throw new Error("Gagal upload file");
+      if (!streamRes.ok) throw new Error("Failed to upload file");
       const streamData = await streamRes.json();
-      const songUrl = streamData.url; // Dapat URL Blob Storage
+      const songUrl = streamData.url;
 
-      // B. Simpan Metadata ke Catalog Service
+      // Save metadata to Catalog Service
       const metadataRes = await fetch(`${CATALOG_API_BASE}/addSong`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -61,96 +265,338 @@ function App() {
         })
       });
 
-      if (!metadataRes.ok) throw new Error("Gagal simpan metadata");
+      if (!metadataRes.ok) throw new Error("Failed to save metadata");
 
-      // C. Reset Form & Refresh List
-      alert("Upload Berhasil!");
+      alert("Upload successful!");
       setTitle("");
       setArtist("");
       setFile(null);
       fetchSongs();
 
-    } catch (err) {
-      alert("Error: " + err.message);
+    } catch (error) {
+      alert("Error: " + error.message);
     } finally {
       setUploading(false);
     }
   };
 
+  // Utility Functions
+  const formatTime = (seconds) => {
+    if (!seconds || isNaN(seconds)) return "0:00";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleString();
+  };
+
+  const getSongTitle = (songId) => {
+    const song = songs.find(s => s._id === songId);
+    return song ? song.title : 'Unknown Song';
+  };
+
+  // Login Modal Component
+  if (!isAuthenticated) {
+    return (
+      <div className="login-overlay">
+        <div className="login-container">
+          <div className="login-header">
+            <h1>🎵 Just Play</h1>
+            <p>Your Premium Music Experience</p>
+          </div>
+          <form onSubmit={handleLogin} className="login-form">
+            <div className="input-group">
+              <input 
+                name="username" 
+                type="text" 
+                placeholder="Username" 
+                required 
+              />
+            </div>
+            <div className="input-group">
+              <input 
+                name="password" 
+                type="password" 
+                placeholder="Password" 
+                required 
+              />
+            </div>
+            <button type="submit" className="login-btn">
+              Enter Music World
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="container">
-      <header>
-        <h1>🎵 Just Play</h1>
-        <p>Cloud Streaming sederhana dengan Azure</p>
+    <div className="app">
+      {/* Navigation Header */}
+      <header className="header">
+        <div className="header-content">
+          <div className="logo">
+            <h1>🎵 Just Play</h1>
+            <span className="tagline">Premium Streaming</span>
+          </div>
+          <nav className="nav-tabs">
+            <button 
+              className={`nav-tab ${activeTab === 'music' ? 'active' : ''}`}
+              onClick={() => setActiveTab('music')}
+            >
+              Music Library
+            </button>
+            <button 
+              className={`nav-tab ${activeTab === 'upload' ? 'active' : ''}`}
+              onClick={() => setActiveTab('upload')}
+            >
+              Upload
+            </button>
+            <button 
+              className={`nav-tab ${activeTab === 'analytics' ? 'active' : ''}`}
+              onClick={() => setActiveTab('analytics')}
+            >
+              Analytics
+            </button>
+          </nav>
+          <div className="user-section">
+            <span className="welcome">Welcome, {currentUser?.username}</span>
+            <button onClick={handleLogout} className="logout-btn">Logout</button>
+          </div>
+        </div>
       </header>
 
-      {/* PLAYER SECTION */}
-      <div className="player-box">
-        {currentSong ? (
-          <>
-            <h3>Sedang Memutar: {currentSong.title}</h3>
-            <p>{currentSong.artist}</p>
-            <audio controls autoPlay src={currentSong.url} className="audio-player">
-              Browser Anda tidak mendukung audio element.
-            </audio>
-          </>
-        ) : (
-          <p>Pilih lagu untuk memutar</p>
-        )}
-      </div>
-
-      <hr />
-
-      {/* UPLOAD SECTION */}
-      <div className="upload-section">
-        <h3>Upload Lagu Baru</h3>
-        <form onSubmit={handleUpload}>
-          <input 
-            type="text" 
-            placeholder="Judul Lagu" 
-            value={title} 
-            onChange={e => setTitle(e.target.value)} 
-            required 
-          />
-          <input 
-            type="text" 
-            placeholder="Nama Artis" 
-            value={artist} 
-            onChange={e => setArtist(e.target.value)} 
-          />
-          <input 
-            type="file" 
-            accept="audio/*" 
-            onChange={e => setFile(e.target.files[0])} 
-            required 
-          />
-          <button type="submit" disabled={uploading}>
-            {uploading ? "Mengunggah..." : "Upload MP3"}
-          </button>
-        </form>
-      </div>
-
-      <hr />
-
-      {/* LIST SECTION */}
-      <div className="playlist">
-        <h3>Daftar Lagu</h3>
-        {songs.length === 0 && <p>Belum ada lagu. Upload dulu!</p>}
-        <ul>
-          {songs.map((song) => (
-            <li key={song._id} onClick={() => setCurrentSong(song)} className="song-item">
-              <span className="play-icon">▶️</span>
-              <div>
-                <strong>{song.title}</strong>
-                <br />
-                <small>{song.artist}</small>
+      {/* Main Content */}
+      <main className="main-content">
+        {/* Music Library Tab */}
+        {activeTab === 'music' && (
+          <div className="music-library">
+            <div className="section-header">
+              <h2>Your Music Collection</h2>
+              <span className="song-count">{songs.length} tracks</span>
+            </div>
+            
+            {songs.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">🎵</div>
+                <h3>No music yet</h3>
+                <p>Upload your first track to get started</p>
               </div>
-            </li>
-          ))}
-        </ul>
-      </div>
+            ) : (
+              <div className="songs-grid">
+                {songs.map((song, index) => (
+                  <div 
+                    key={song._id} 
+                    className={`song-card ${currentSong?._id === song._id ? 'playing' : ''}`}
+                    onClick={() => playSong(song, index)}
+                  >
+                    <div className="song-artwork">
+                      <div className="play-overlay">
+                        <div className="play-button">
+                          {currentSong?._id === song._id && isPlaying ? '⏸️' : '▶️'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="song-info">
+                      <h3 className="song-title">{song.title}</h3>
+                      <p className="song-artist">{song.artist}</p>
+                    </div>
+                    {currentSong?._id === song._id && (
+                      <div className="now-playing-indicator">
+                        <div className="sound-wave">
+                          <span></span>
+                          <span></span>
+                          <span></span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Upload Tab */}
+        {activeTab === 'upload' && (
+          <div className="upload-section">
+            <div className="section-header">
+              <h2>Upload New Track</h2>
+              <p>Share your music with the world</p>
+            </div>
+            
+            <form onSubmit={handleUpload} className="upload-form">
+              <div className="form-grid">
+                <div className="input-group">
+                  <label>Track Title</label>
+                  <input 
+                    type="text" 
+                    placeholder="Enter song title" 
+                    value={title} 
+                    onChange={e => setTitle(e.target.value)} 
+                    required 
+                  />
+                </div>
+                <div className="input-group">
+                  <label>Artist Name</label>
+                  <input 
+                    type="text" 
+                    placeholder="Enter artist name" 
+                    value={artist} 
+                    onChange={e => setArtist(e.target.value)} 
+                  />
+                </div>
+              </div>
+              
+              <div className="file-upload-area">
+                <input 
+                  type="file" 
+                  accept="audio/*" 
+                  onChange={e => setFile(e.target.files,[object, Object],)} 
+                  required 
+                  id="file-input"
+                  className="file-input"
+                />
+                <label htmlFor="file-input" className="file-label">
+                  <div className="upload-icon">📁</div>
+                  <span>{file ? file.name : 'Choose audio file'}</span>
+                  <small>MP3, WAV, FLAC supported</small>
+                </label>
+              </div>
+              
+              <button type="submit" disabled={uploading} className="upload-btn">
+                {uploading ? (
+                  <>
+                    <span className="spinner"></span>
+                    Uploading...
+                  </>
+                ) : (
+                  'Upload Track'
+                )}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* Analytics Tab */}
+        {activeTab === 'analytics' && (
+          <div className="analytics-section">
+            <div className="section-header">
+              <h2>Analytics Dashboard</h2>
+              <button onClick={fetchAnalytics} className="refresh-btn">
+                🔄 Refresh
+              </button>
+            </div>
+            
+            {isLoadingAnalytics ? (
+              <div className="loading-state">
+                <div className="spinner"></div>
+                <p>Loading analytics data...</p>
+              </div>
+            ) : analyticsData.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">📊</div>
+                <h3>No activity yet</h3>
+                <p>Start playing music to see analytics</p>
+              </div>
+            ) : (
+              <div className="analytics-table">
+                <div className="table-header">
+                  <div>Song</div>
+                  <div>Action</div>
+                  <div>User</div>
+                  <div>Timestamp</div>
+                </div>
+                <div className="table-body">
+                  {analyticsData.slice(0, 50).map((event) => (
+                    <div key={event._id} className="table-row">
+                      <div className="song-cell">
+                        <strong>{getSongTitle(event.songId)}</strong>
+                      </div>
+                      <div className={`action-cell ${event.event}`}>
+                        <span className="action-badge">
+                          {event.event === 'play' ? '▶️ Play' : '⏭️ Skip'}
+                        </span>
+                      </div>
+                      <div className="user-cell">{event.userId}</div>
+                      <div className="time-cell">{formatDate(event.timestamp)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* Music Player Footer */}
+      {currentSong && (
+        <footer className="player-footer">
+          <audio 
+            ref={audioRef} 
+            src={currentSong.url} 
+            autoPlay
+          />
+          
+          <div className="player-container">
+            {/* Now Playing Info */}
+            <div className="now-playing-info">
+              <div className="song-artwork-mini">
+                <div className="artwork-placeholder">🎵</div>
+              </div>
+              <div className="track-info">
+                <h4>{currentSong.title}</h4>
+                <p>{currentSong.artist}</p>
+              </div>
+            </div>
+            
+            {/* Player Controls */}
+            <div className="player-controls">
+              <div className="control-buttons">
+                <button onClick={handlePrevious} className="control-btn">⏮️</button>
+                <button onClick={togglePlayPause} className="play-pause-btn">
+                  {isPlaying ? '⏸️' : '▶️'}
+                </button>
+                <button onClick={handleNext} className="control-btn">⏭️</button>
+                <button 
+                  onClick={toggleLoop} 
+                  className={`control-btn ${isLooping ? 'active' : ''}`}
+                >
+                  🔁
+                </button>
+              </div>
+              
+              <div className="progress-container">
+                <span className="time-display">{formatTime(audioRef.current?.currentTime)}</span>
+                <div className="progress-bar" onClick={handleProgressClick}>
+                  <div 
+                    className="progress-fill" 
+                    style={{width: `${progress}%`}}
+                  ></div>
+                </div>
+                <span className="time-display">{formatTime(duration)}</span>
+              </div>
+            </div>
+            
+            {/* Volume Control */}
+            <div className="volume-control">
+              <span className="volume-icon">🔊</span>
+              <input 
+                type="range" 
+                min="0" 
+                max="100" 
+                value={volume * 100}
+                onChange={handleVolumeChange}
+                className="volume-slider"
+              />
+            </div>
+          </div>
+        </footer>
+      )}
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
