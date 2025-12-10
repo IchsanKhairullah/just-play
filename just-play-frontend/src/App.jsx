@@ -4,7 +4,7 @@ import './App.css'
 // API Configuration
 const CATALOG_API_BASE = "https://func-catalog-just-play.azurewebsites.net/api"; 
 const STREAM_API_BASE = "https://func-stream-just-play.azurewebsites.net/api";
-const ANALYTICS_API_BASE = "https://func-analytics-just-play.azurewebsites.net/api/events";
+const ANALYTICS_API_BASE = "https://func-analytics-just-play.azurewebsites.net/api";
 
 function App() {
   // Authentication State
@@ -65,12 +65,13 @@ function App() {
     const handleEnded = () => {
       if (isLooping) {
         audio.currentTime = 0;
-        audio.play();
+        audio.play().catch(() => {});
       } else {
         handleNext();
       }
     };
 
+    // keep listeners minimal — they update UI and (optionally) track analytics
     const handlePlay = () => {
       setIsPlaying(true);
       if (currentSong) trackEvent("play", currentSong._id);
@@ -94,6 +95,7 @@ function App() {
       audio.removeEventListener('play', handlePlay);
       audio.removeEventListener('pause', handlePause);
     };
+    // note: we intentionally don't add currentSong to deps here (minimal change).
   }, [isLooping, volume]);
 
   // Authentication Functions
@@ -167,6 +169,7 @@ function App() {
         body: JSON.stringify(payload)
       });
 
+      // refresh analytics panel shortly after
       setTimeout(fetchAnalytics, 500);
     } catch (error) {
       console.error("Analytics tracking failed:", error);
@@ -175,8 +178,20 @@ function App() {
 
   // Music Player Functions
   const playSong = async (song, index) => {
+    // set state first
     setCurrentSong(song);
     setCurrentIndex(index);
+
+    // try to play audio after state update/render
+    setTimeout(() => {
+      const audio = audioRef.current;
+      if (audio) {
+        // attempt to play; ignore promise rejection (autoplay policies)
+        audio.play().catch(() => {});
+      }
+    }, 80);
+
+    // minimal: keep awaiting trackEvent (your original behavior)
     await trackEvent('play', song._id);
   };
 
@@ -189,7 +204,7 @@ function App() {
       audio.pause();
     } else {
       trackEvent("play", currentSong._id);
-      audio.play();
+      audio.play().catch(() => {});
     }
   };
 
