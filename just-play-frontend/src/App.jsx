@@ -69,10 +69,10 @@ function App() {
 
     const handleEnded = () => {
       setIsPlaying(false);
-      if (isLooping) {
+      if (isLooping) { //jika loop hidup kembalikan durasi ke awal
         audio.currentTime = 0;
         audio.play().catch(() => {});
-      } else {
+      } else { //jika loop mati pindah ke lagu selanjutnya
         handleNext();
       }
     };
@@ -142,9 +142,9 @@ function App() {
   // Data Fetching Functions
   const fetchSongs = async () => {
     try {
-      const response = await fetch(`${CATALOG_API_BASE}/getSongs`);
+      const response = await fetch(`${CATALOG_API_BASE}/getSongs`); //panggil API catalog
       const data = await response.json();
-      setSongs(data);
+      setSongs(data); //simpan ke state
     } catch (error) {
       console.error("Failed to fetch songs:", error);
     }
@@ -169,10 +169,11 @@ function App() {
     try {
       const payload = {
         songId,
-        event: eventType,
+        event: eventType, //tipe event (play, pause, skip)
         userId: currentUser?.id
       };
 
+      //kirim data ke API analytics
       await fetch(`${ANALYTICS_API_BASE}/trackEvent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -202,7 +203,7 @@ function App() {
     }, 80);
 
     // minimal: keep awaiting trackEvent (your original behavior)
-    await trackEvent('play', song._id);
+    // await trackEvent('play', song._id);
   };
 
   const togglePlayPause = () => {
@@ -229,20 +230,22 @@ function App() {
     setCurrentIndex(newIndex);
       
     await trackEvent("skip", currentSong?._id);  // skip lagu sekarang
-    await trackEvent("play", prevSong._id);      // play lagu baru
+    // await trackEvent("play", prevSong._id);      // play lagu baru
   };
 
   const handleNext = async () => {
     if (songs.length === 0) return;
-    
-    const newIndex = currentIndex < songs.length - 1 ? currentIndex + 1 : 0;
+    //hitung index lagu
+    const newIndex = currentIndex < songs.length - 1 ? currentIndex + 1 : 0; //current index+1 (untuk index selanjutnya)
     const nextSong = songs[newIndex];
     
+    //update state
     setCurrentSong(nextSong);
     setCurrentIndex(newIndex);
     
+    //kirim laporan ke analytics
     await trackEvent("skip", currentSong?._id);
-    await trackEvent("play", nextSong._id);
+    // await trackEvent("play", nextSong._id);
   };
 
   const toggleLoop = () => {
@@ -275,6 +278,7 @@ function App() {
 
     setUploading(true);
     try {
+      //upload file ke blob
       const formData = new FormData();
       formData.append('file', file);
 
@@ -287,6 +291,7 @@ function App() {
       const streamData = await streamRes.json();
       const songUrl = streamData.url;
 
+      //save metadata & URL ke Cosmos DB
       const metadataRes = await fetch(`${CATALOG_API_BASE}/addSong`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -332,13 +337,15 @@ function App() {
   // compute Top Played (most played) from analyticsData (frontend-only)
   const topPlayed = useMemo(() => {
     if (!analyticsData || analyticsData.length === 0) return [];
-
+    //hitung jumlah play per songId
     const counts = {};
     for (const ev of analyticsData) {
+      //hanya hitung event play
       if (!ev || ev.event !== 'play' || !ev.songId) continue;
       counts[ev.songId] = (counts[ev.songId] || 0) + 1;
     }
 
+    //gabungkan jumlah play dengan metadata lagu
     const arr = Object.entries(counts).map(([songId, count]) => {
       const s = songs.find(x => x._id === songId) || {};
       return {
@@ -349,7 +356,7 @@ function App() {
         url: s.url || ''
       };
     });
-
+    //sort dari terbanyak
     arr.sort((a, b) => b.count - a.count);
     return arr;
   }, [analyticsData, songs]);
