@@ -4,7 +4,7 @@ import './App.css'
 // API Configuration
 const CATALOG_API_BASE = "https://func-catalog-just-play.azurewebsites.net/api"; 
 const STREAM_API_BASE = "https://func-stream-just-play.azurewebsites.net/api";
-const ANALYTICS_API_BASE = "https://func-analytics-just-play.azurewebsites.net/api";
+const ANALYTICS_API_BASE = "https://func-analytics-just-play.azurewebsites.net/api/events";
 
 function App() {
   // Authentication State
