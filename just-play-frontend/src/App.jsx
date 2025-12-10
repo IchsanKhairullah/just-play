@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import './App.css'
 
 // API Configuration
@@ -145,7 +145,7 @@ function App() {
     try {
       const response = await fetch(`${ANALYTICS_API_BASE}/events`);
       const data = await response.json();
-      setAnalyticsData(data);
+      setAnalyticsData(data || []);
     } catch (error) {
       console.error("Failed to fetch analytics:", error);
       setAnalyticsData([]);
@@ -318,6 +318,31 @@ function App() {
     return song ? song.title : 'Unknown Song';
   };
 
+  // compute Top Played (most played) from analyticsData (frontend-only)
+  const topPlayed = useMemo(() => {
+    if (!analyticsData || analyticsData.length === 0) return [];
+
+    const counts = {};
+    for (const ev of analyticsData) {
+      if (!ev || ev.event !== 'play' || !ev.songId) continue;
+      counts[ev.songId] = (counts[ev.songId] || 0) + 1;
+    }
+
+    const arr = Object.entries(counts).map(([songId, count]) => {
+      const s = songs.find(x => x._id === songId) || {};
+      return {
+        songId,
+        count,
+        title: s.title || 'Unknown Song',
+        artist: s.artist || 'Unknown Artist',
+        url: s.url || ''
+      };
+    });
+
+    arr.sort((a, b) => b.count - a.count);
+    return arr;
+  }, [analyticsData, songs]);
+
   // Login Modal Component
   if (!isAuthenticated) {
     return (
@@ -376,7 +401,10 @@ function App() {
             </button>
             <button 
               className={`nav-tab ${activeTab === 'analytics' ? 'active' : ''}`}
-              onClick={() => setActiveTab('analytics')}
+              onClick={() => {
+                setActiveTab('analytics');
+                fetchAnalytics();
+              }}
             >
               Analytics
             </button>
@@ -508,9 +536,10 @@ function App() {
               <div className="analytics-section">
                 <div className="section-header">
                   <h2>Analytics Dashboard</h2>
-                  <button onClick={fetchAnalytics} className="refresh-btn">
-                    🔄 Refresh
-                  </button>
+                  <div className="analytics-header-actions">
+                    <button onClick={fetchAnalytics} className="refresh-btn">🔄 Refresh</button>
+                    <small className="analytics-counter">Showing last {analyticsData.length} events (up to 100)</small>
+                  </div>
                 </div>
 
                 {isLoadingAnalytics ? (
@@ -518,37 +547,86 @@ function App() {
                     <div className="spinner"></div>
                     <p>Loading analytics data...</p>
                   </div>
-                ) : analyticsData.length === 0 ? (
-                  <div className="empty-state">
-                    <div className="empty-icon">📊</div>
-                    <h3>No activity yet</h3>
-                    <p>Start playing music to see analytics</p>
-                  </div>
                 ) : (
-                  <div className="analytics-table">
-                    <div className="table-header">
-                      <div>Song</div>
-                      <div>Action</div>
-                      <div>User</div>
-                      <div>Timestamp</div>
-                    </div>
-                    <div className="table-body">
-                      {analyticsData.slice(0, 50).map((event) => (
-                        <div key={event._id} className="table-row">
-                          <div className="song-cell">
-                            <strong>{getSongTitle(event.songId)}</strong>
-                          </div>
-                          <div className={`action-cell ${event.event}`}>
-                            <span className="action-badge">
-                              {event.event === 'play' ? '▶️ Play' : '⏭️ Skip'}
-                            </span>
-                          </div>
-                          <div className="user-cell">{event.userId}</div>
-                          <div className="time-cell">{formatDate(event.timestamp)}</div>
+                  <>
+                    {/* TOP PLAYED TRACKS - Dark Premium Cards */}
+                    <div className="top-played-section">
+                      <h3 className="analytics-section-title">🎧 Top Played Tracks</h3>
+
+                      {topPlayed.length === 0 ? (
+                        <div className="empty-state">
+                          <div className="empty-icon">📊</div>
+                          <p>No play data yet.</p>
                         </div>
-                      ))}
+                      ) : (
+                        <div className="top-played-grid">
+                          {topPlayed.map((item, idx) => (
+                            <div key={item.songId} className="top-played-card">
+                              <div className="ranking-badge">
+                                #{idx + 1}
+                              </div>
+
+                              <div className="track-details">
+                                <div className="track-title">{item.title}</div>
+                                <div className="track-artist">{item.artist}</div>
+                                <div className="play-count">
+                                  <strong>{item.count}</strong> plays
+                                </div>
+                              </div>
+
+                              <div className="card-play-button">
+                                <button
+                                  className="play-btn-card"
+                                  onClick={() => {
+                                    const songObj = songs.find(s => s._id === item.songId);
+                                    if (songObj) playSong(songObj, songs.indexOf(songObj));
+                                  }}
+                                >
+                                  ▶
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
+
+                    {/* RECENT EVENTS TABLE - Dark Premium Table */}
+                    <div className="recent-events-section">
+                      <h4 className="analytics-section-title">Recent Events</h4>
+                      {analyticsData.length === 0 ? (
+                        <div className="no-events">No recent events.</div>
+                      ) : (
+                        <div className="analytics-data-table">
+                          <div className="table-header-dark">
+                            <div className="header-cell">Song</div>
+                            <div className="header-cell">Action</div>
+                            <div className="header-cell">User</div>
+                            <div className="header-cell">Timestamp</div>
+                          </div>
+                          <div className="table-body-dark">
+                            {analyticsData.slice(0, 50).map((event) => (
+                              <div key={event._id} className="table-row-dark">
+                                <div className="data-cell song-cell-dark">
+                                  <strong>{getSongTitle(event.songId)}</strong>
+                                </div>
+                                <div className="data-cell action-cell-dark">
+                                  <span className={`event-badge event-${event.event}`}>
+                                    {event.event === 'play' && '▶️ Play'}
+                                    {event.event === 'pause' && '⏸️ Pause'}
+                                    {event.event === 'skip' && '⏭️ Skip'}
+                                    {!['play','pause','skip'].includes(event.event) && event.event}
+                                  </span>
+                                </div>
+                                <div className="data-cell user-cell-dark">{event.userId}</div>
+                                <div className="data-cell time-cell-dark">{formatDate(event.timestamp)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             )}
