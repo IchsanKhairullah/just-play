@@ -51,6 +51,9 @@ function App() {
     const audio = audioRef.current;
     if (!audio) return;
 
+    // 1. Cek status awal (PENTING: untuk sinkronisasi saat Autoplay berjalan)
+    setIsPlaying(!audio.paused);
+
     const updateProgress = () => {
       if (audio.duration) {
         setProgress((audio.currentTime / audio.duration) * 100);
@@ -60,9 +63,12 @@ function App() {
     const handleLoadedMetadata = () => {
       setDuration(audio.duration);
       audio.volume = volume;
+      // Pastikan state sync saat metadata termuat
+      setIsPlaying(!audio.paused);
     };
 
     const handleEnded = () => {
+      setIsPlaying(false);
       if (isLooping) {
         audio.currentTime = 0;
         audio.play().catch(() => {});
@@ -71,32 +77,36 @@ function App() {
       }
     };
 
-    // keep listeners minimal — they update UI and (optionally) track analytics
-    const handlePlay = () => {
+    // Handler sederhana untuk sync state & analytics
+    const onPlay = () => {
       setIsPlaying(true);
       if (currentSong) trackEvent("play", currentSong._id);
     };
 
-    const handlePause = () => {
+    const onPause = () => {
       setIsPlaying(false);
       if (currentSong) trackEvent("pause", currentSong._id);
     };
 
+    // Pasang Event Listeners
     audio.addEventListener('timeupdate', updateProgress);
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
     audio.addEventListener('ended', handleEnded);
-    audio.addEventListener('play', handlePlay);
-    audio.addEventListener('pause', handlePause);
+    audio.addEventListener('play', onPlay);
+    audio.addEventListener('pause', onPause);
 
+    // Cleanup saat unmount atau saat lagu berganti
     return () => {
       audio.removeEventListener('timeupdate', updateProgress);
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('ended', handleEnded);
-      audio.removeEventListener('play', handlePlay);
-      audio.removeEventListener('pause', handlePause);
+      audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('pause', onPause);
     };
-    // note: we intentionally don't add currentSong to deps here (minimal change).
-  }, [isLooping, volume]);
+    
+    // PERBAIKAN UTAMA: Tambahkan 'currentSong' ke dependency array
+    // Agar listener diperbarui setiap kali lagu berganti
+  }, [currentSong, isLooping, volume]);
 
   // Authentication Functions
   const handleLogin = (e) => {
@@ -199,12 +209,13 @@ function App() {
     const audio = audioRef.current;
     if (!audio || !currentSong) return;
 
-    if (isPlaying) {
-      trackEvent("pause", currentSong._id);
-      audio.pause();
+    // Cek status asli elemen audio, bukan state React
+    if (audio.paused) {
+      audio.play().catch((err) => console.error("Play error:", err));
+      // State akan otomatis berubah jadi TRUE lewat event listener 'play'
     } else {
-      trackEvent("play", currentSong._id);
-      audio.play().catch(() => {});
+      audio.pause();
+      // State akan otomatis berubah jadi FALSE lewat event listener 'pause'
     }
   };
 
